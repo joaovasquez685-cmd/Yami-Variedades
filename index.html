@@ -899,6 +899,38 @@
             .section-header { margin-bottom: 18px; }
         }
 
+        /* ===== ZOOM DE FOTOS ===== */
+        .product-image img { cursor: zoom-in; }
+        .zoom-overlay {
+            display: none; position: fixed; inset: 0; z-index: 4500;
+            background: rgba(20, 8, 26, 0.92);
+            align-items: center; justify-content: center; overflow: hidden;
+        }
+        .zoom-overlay.active { display: flex; }
+        .zoom-overlay img {
+            max-width: 95vw; max-height: 85vh; object-fit: contain;
+            touch-action: none; user-select: none; -webkit-user-select: none;
+            transform-origin: center center; border-radius: 8px;
+        }
+        .zoom-close {
+            position: absolute; top: 15px; right: 15px; z-index: 2;
+            width: 44px; height: 44px; border-radius: 50%; border: none;
+            background: rgba(255,255,255,0.25); color: white; font-size: 1.4rem; cursor: pointer;
+        }
+        .zoom-controls {
+            position: absolute; bottom: 55px; left: 50%; transform: translateX(-50%); z-index: 2;
+            display: flex; gap: 10px;
+        }
+        .zoom-controls button {
+            width: 48px; height: 48px; border-radius: 50%; border: none;
+            background: rgba(255,255,255,0.25); color: white; font-size: 1.5rem; cursor: pointer;
+        }
+        .zoom-controls button:hover, .zoom-close:hover { background: rgba(255,255,255,0.4); }
+        .zoom-hint {
+            position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+            color: rgba(255,255,255,0.75); font-size: 0.8rem; pointer-events: none;
+        }
+
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f5f0f3; }
         ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
@@ -1559,6 +1591,18 @@
                 <button class="btn btn-outline" onclick="closeOrderDetail()">Cerrar</button>
             </div>
         </div>
+    </div>
+
+    <!-- ==================== ZOOM DE FOTOS ==================== -->
+    <div class="zoom-overlay" id="imgZoomModal" onclick="if(event.target===this)closeImageZoom()">
+        <button class="zoom-close" onclick="closeImageZoom()" title="Cerrar">✕</button>
+        <img id="imgZoomImg" alt="" draggable="false">
+        <div class="zoom-controls">
+            <button type="button" onclick="zoomBy(1/1.5)" title="Alejar">−</button>
+            <button type="button" onclick="resetZoom()" title="Restablecer">↺</button>
+            <button type="button" onclick="zoomBy(1.5)" title="Acercar">+</button>
+        </div>
+        <p class="zoom-hint">Toca dos veces o pellizca para acercar · arrastra para mover</p>
     </div>
 
     <script>
@@ -2245,7 +2289,7 @@
                 const img = new Image();
                 img.onload = function() {
                     // Se reduce la foto para que no llene el almacenamiento del navegador
-                    const MAX = 700;
+                    const MAX = 1000;
                     const scale = Math.min(1, MAX / Math.max(img.width, img.height));
                     const canvas = document.createElement('canvas');
                     canvas.width = Math.round(img.width * scale);
@@ -3502,8 +3546,103 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 document.getElementById('cartSidebar').classList.remove('open');
+                closeImageZoom();
             }
         });
+
+        // ===== ZOOM DE FOTOS =====
+        const Z = { scale: 1, x: 0, y: 0, pointers: new Map(), startDist: 0, startScale: 1, drag: null, lastTap: 0 };
+
+        function applyZoom() {
+            const img = document.getElementById('imgZoomImg');
+            const mx = img.clientWidth * (Z.scale - 1) / 2;
+            const my = img.clientHeight * (Z.scale - 1) / 2;
+            Z.x = Math.max(-mx, Math.min(mx, Z.x));
+            Z.y = Math.max(-my, Math.min(my, Z.y));
+            img.style.transform = `translate(${Z.x}px, ${Z.y}px) scale(${Z.scale})`;
+            img.style.cursor = Z.scale > 1 ? 'grab' : 'zoom-in';
+        }
+
+        function setZoomScale(s) {
+            Z.scale = Math.min(5, Math.max(1, s));
+            if (Z.scale === 1) { Z.x = 0; Z.y = 0; }
+            applyZoom();
+        }
+
+        function zoomBy(f) { setZoomScale(Z.scale * f); }
+        function resetZoom() { Z.scale = 1; Z.x = 0; Z.y = 0; applyZoom(); }
+
+        function openImageZoom(src) {
+            Z.pointers.clear(); Z.drag = null;
+            document.getElementById('imgZoomImg').src = src;
+            resetZoom();
+            document.getElementById('imgZoomModal').classList.add('active');
+        }
+
+        function closeImageZoom() {
+            document.getElementById('imgZoomModal').classList.remove('active');
+            document.getElementById('imgZoomImg').removeAttribute('src');
+            Z.pointers.clear(); Z.drag = null;
+        }
+
+        (function initZoom() {
+            const modal = document.getElementById('imgZoomModal');
+            const img = document.getElementById('imgZoomImg');
+            const dist = () => { const [a, b] = [...Z.pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+
+            // Al tocar una foto de producto se abre el zoom
+            document.addEventListener('click', e => {
+                const t = e.target.closest('.product-image img');
+                if (t && t.getAttribute('src')) openImageZoom(t.getAttribute('src'));
+            });
+
+            // Rueda del mouse
+            modal.addEventListener('wheel', e => {
+                e.preventDefault();
+                zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+            }, { passive: false });
+
+            img.addEventListener('pointerdown', e => {
+                img.setPointerCapture(e.pointerId);
+                Z.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (Z.pointers.size === 2) {
+                    Z.startDist = dist() || 1; Z.startScale = Z.scale; Z.drag = null;
+                } else if (Z.pointers.size === 1) {
+                    Z.drag = { px: e.clientX, py: e.clientY, x: Z.x, y: Z.y, moved: false };
+                }
+            });
+
+            img.addEventListener('pointermove', e => {
+                if (!Z.pointers.has(e.pointerId)) return;
+                Z.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (Z.pointers.size === 2) {
+                    setZoomScale(Z.startScale * dist() / Z.startDist);
+                } else if (Z.drag) {
+                    const dx = e.clientX - Z.drag.px, dy = e.clientY - Z.drag.py;
+                    if (Math.hypot(dx, dy) > 6) Z.drag.moved = true;
+                    if (Z.scale > 1) { Z.x = Z.drag.x + dx; Z.y = Z.drag.y + dy; applyZoom(); }
+                }
+            });
+
+            const end = e => {
+                const wasTap = Z.pointers.size === 1 && Z.drag && !Z.drag.moved;
+                Z.pointers.delete(e.pointerId);
+                if (Z.pointers.size === 1) {
+                    const [p] = [...Z.pointers.values()];
+                    Z.drag = { px: p.x, py: p.y, x: Z.x, y: Z.y, moved: true };
+                } else if (Z.pointers.size === 0) {
+                    Z.drag = null;
+                }
+                // Doble toque / doble clic: acerca o vuelve al tamaño normal
+                if (wasTap && e.type === 'pointerup') {
+                    const now = Date.now();
+                    if (now - Z.lastTap < 320) { setZoomScale(Z.scale > 1 ? 1 : 2.5); Z.lastTap = 0; }
+                    else Z.lastTap = now;
+                }
+            };
+            img.addEventListener('pointerup', end);
+            img.addEventListener('pointercancel', end);
+        })();
 
         // Start
         function togglePassword() {
