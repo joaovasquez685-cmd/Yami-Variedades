@@ -914,6 +914,8 @@
         .pv-toolbar button { background:rgba(255,255,255,0.14); color:#fff; border:none; border-radius:12px; min-width:46px; height:46px; padding:0 12px; font-size:1.2rem; cursor:pointer; font-family:inherit; }
         .pv-toolbar button:hover { background:rgba(255,255,255,0.28); }
         .pv-toolbar .pv-close { background:var(--danger); }
+        .product-image:has(img) { position:relative; cursor:zoom-in; }
+        .product-image:has(img)::after { content:"🔍"; position:absolute; right:10px; bottom:10px; background:rgba(255,255,255,0.9); border-radius:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; font-size:1rem; box-shadow:0 2px 8px rgba(0,0,0,0.2); pointer-events:none; }
         .order-photo-hint { font-size:0.8rem; color:var(--gray); margin:-8px 0 12px; }
     </style>
 </head>
@@ -3598,6 +3600,12 @@
         }
         stage.addEventListener('pointerup', endPtr);
         stage.addEventListener('pointercancel', endPtr);
+
+        // Clic en la foto de cualquier producto (catálogo público y admin) = abrir visor
+        document.addEventListener('click', function (e) {
+            const im = e.target.closest && e.target.closest('.product-image img');
+            if (im) { e.preventDefault(); window.openPhotoViewer(im.src); }
+        });
 
         // Teclado: Esc cierra, R gira, +/- zoom
         document.addEventListener('keydown', function (e) {
